@@ -5,6 +5,10 @@ A lightweight Windows terminal dashboard for observing active Codex CLI workspac
 ![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
+## Preview
+
+![Codex Monitor showing live filesystem, Git, and token metrics](assets/codex-monitor-preview.png)
+
 ## Features
 
 - Automatically discovers Codex CLI sessions—no project path configuration.
