@@ -7,6 +7,12 @@ A lightweight Windows terminal dashboard for observing active Codex CLI workspac
 
 ## Preview
 
+### Live token and cache metrics
+
+![Codex Monitor showing token usage and cache-hit percentage](assets/codex-monitor-token-preview.png)
+
+### Filesystem activity
+
 ![Codex Monitor showing live filesystem, Git, and token metrics](assets/codex-monitor-preview.png)
 
 ## Features
