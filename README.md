@@ -20,7 +20,15 @@ A lightweight Windows terminal dashboard for observing active Codex CLI workspac
 
 ## Run
 
-Download and extract the release ZIP, then double-click `Start-Codex-Monitor.cmd`. You can also run:
+Open the repository's **Code** menu, choose **Download ZIP**, extract it, and double-click `Start-Codex-Monitor.cmd`. You can also clone it with Git:
+
+```powershell
+git clone https://github.com/BrennanNVA/codex-monitor.git
+cd codex-monitor
+.\Start-Codex-Monitor.cmd
+```
+
+Or run the PowerShell entry point directly:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\codex-monitor.ps1
