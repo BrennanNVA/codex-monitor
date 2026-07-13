@@ -102,6 +102,57 @@ Describe 'Workspace aggregation' {
     }
 }
 
+Describe 'Since-launch token accounting' {
+    It 'uses the first observation as a zero baseline and adds later deltas' {
+        $State = @{}
+        $First = [PSCustomObject]@{ SessionId='one'; Workspace='C:\repo'; TokensUsed=1000; InputTokens=800; TokensCached=500; HasTokenUsage=$true }
+        $Later = [PSCustomObject]@{ SessionId='one'; Workspace='C:\repo'; TokensUsed=1250; InputTokens=1000; TokensCached=620; HasTokenUsage=$true }
+
+        Update-SessionTokenState -State $State -Sessions @($First)
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 0
+        Update-SessionTokenState -State $State -Sessions @($Later)
+        $Totals = Get-SinceLaunchTokenTotals -State $State
+        $Totals.TokensUsed | Should -Be 250
+        $Totals.InputTokens | Should -Be 200
+        $Totals.TokensCached | Should -Be 120
+        $Totals.HasTokenUsage | Should -BeTrue
+    }
+
+    It 'retains accumulated totals while sessions are inactive and after they resume' {
+        $State = @{}
+        Update-SessionTokenState -State $State -Sessions @([PSCustomObject]@{ SessionId='one'; Workspace='C:\repo'; TokensUsed=100; InputTokens=80; TokensCached=20; HasTokenUsage=$true })
+        Update-SessionTokenState -State $State -Sessions @([PSCustomObject]@{ SessionId='one'; Workspace='C:\repo'; TokensUsed=200; InputTokens=160; TokensCached=40; HasTokenUsage=$true })
+        Update-SessionTokenState -State $State -Sessions @()
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 100
+        $State['one'].IsActive | Should -BeFalse
+
+        Update-SessionTokenState -State $State -Sessions @([PSCustomObject]@{ SessionId='one'; Workspace='C:\repo'; TokensUsed=260; InputTokens=210; TokensCached=55; HasTokenUsage=$true })
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 160
+        $State['one'].IsActive | Should -BeTrue
+    }
+
+    It 'aggregates sessions by workspace and never subtracts after a counter rollback' {
+        $State = @{}
+        $Initial = @(
+            [PSCustomObject]@{ SessionId='one'; Workspace='C:\repo-a'; TokensUsed=100; InputTokens=80; TokensCached=20; HasTokenUsage=$true },
+            [PSCustomObject]@{ SessionId='two'; Workspace='C:\repo-b'; TokensUsed=500; InputTokens=400; TokensCached=100; HasTokenUsage=$true }
+        )
+        $Growth = @(
+            [PSCustomObject]@{ SessionId='one'; Workspace='C:\repo-a'; TokensUsed=180; InputTokens=140; TokensCached=30; HasTokenUsage=$true },
+            [PSCustomObject]@{ SessionId='two'; Workspace='C:\repo-b'; TokensUsed=620; InputTokens=490; TokensCached=130; HasTokenUsage=$true }
+        )
+        Update-SessionTokenState -State $State -Sessions $Initial
+        Update-SessionTokenState -State $State -Sessions $Growth
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 200
+        (Get-SinceLaunchTokenTotals -State $State -Workspace 'C:\repo-a').TokensUsed | Should -Be 80
+
+        Update-SessionTokenState -State $State -Sessions @([PSCustomObject]@{ SessionId='one'; Workspace='C:\repo-a'; TokensUsed=20; InputTokens=15; TokensCached=4; HasTokenUsage=$true })
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 200
+        Update-SessionTokenState -State $State -Sessions @([PSCustomObject]@{ SessionId='one'; Workspace='C:\repo-a'; TokensUsed=50; InputTokens=35; TokensCached=9; HasTokenUsage=$true })
+        (Get-SinceLaunchTokenTotals -State $State).TokensUsed | Should -Be 230
+    }
+}
+
 Describe 'Metric formatting' {
     It 'formats large values compactly' {
         Format-CompactNumber 1500000 | Should -Be '1.50m'

@@ -171,6 +171,85 @@ function Get-ActiveWorkspaceSnapshot {
     return @($Results | Sort-Object Path)
 }
 
+function Update-SessionTokenState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$State,
+        [object[]]$Sessions = @()
+    )
+
+    foreach ($Entry in @($State.Values)) { $Entry.IsActive = $false }
+    foreach ($Session in @($Sessions)) {
+        $SessionId = [string]$Session.SessionId
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { continue }
+
+        if (-not $State.ContainsKey($SessionId)) {
+            $State[$SessionId] = [PSCustomObject]@{
+                SessionId = $SessionId
+                Workspace = [string]$Session.Workspace
+                LastTokensUsed = [long]0
+                LastInputTokens = [long]0
+                LastTokensCached = [long]0
+                TokensUsed = [long]0
+                InputTokens = [long]0
+                TokensCached = [long]0
+                HasTokenUsage = $false
+                IsActive = $true
+            }
+        }
+
+        $Entry = $State[$SessionId]
+        $Entry.Workspace = [string]$Session.Workspace
+        $Entry.IsActive = $true
+        if (-not [bool]$Session.HasTokenUsage) { continue }
+
+        $CurrentUsed = [long]$Session.TokensUsed
+        $CurrentInput = [long]$Session.InputTokens
+        $CurrentCached = [long]$Session.TokensCached
+        if ($Entry.HasTokenUsage) {
+            $Entry.TokensUsed += [Math]::Max([long]0, $CurrentUsed - $Entry.LastTokensUsed)
+            $Entry.InputTokens += [Math]::Max([long]0, $CurrentInput - $Entry.LastInputTokens)
+            $Entry.TokensCached += [Math]::Max([long]0, $CurrentCached - $Entry.LastTokensCached)
+        }
+        else {
+            $Entry.HasTokenUsage = $true
+        }
+
+        $Entry.LastTokensUsed = $CurrentUsed
+        $Entry.LastInputTokens = $CurrentInput
+        $Entry.LastTokensCached = $CurrentCached
+    }
+}
+
+function Get-SinceLaunchTokenTotals {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$State,
+        [string]$Workspace
+    )
+
+    $TokensUsed = [long]0
+    $InputTokens = [long]0
+    $TokensCached = [long]0
+    $HasTokenUsage = $false
+    foreach ($Entry in @($State.Values)) {
+        if (-not [string]::IsNullOrWhiteSpace($Workspace) -and
+            -not $Entry.Workspace.Equals($Workspace, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (-not $Entry.HasTokenUsage) { continue }
+        $HasTokenUsage = $true
+        $TokensUsed += [long]$Entry.TokensUsed
+        $InputTokens += [long]$Entry.InputTokens
+        $TokensCached += [long]$Entry.TokensCached
+    }
+
+    return [PSCustomObject]@{
+        TokensUsed = $TokensUsed
+        InputTokens = $InputTokens
+        TokensCached = $TokensCached
+        HasTokenUsage = $HasTokenUsage
+    }
+}
+
 function Get-ShortHash {
     param([string]$Text)
     $Sha = [Security.Cryptography.SHA256]::Create()
@@ -278,4 +357,4 @@ function Format-CacheRate {
     return ((($Cached/[double]$InputTokens)*100).ToString('0.00',[Globalization.CultureInfo]::InvariantCulture)+'%')
 }
 
-Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
+Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,Update-SessionTokenState,Get-SinceLaunchTokenTotals,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
