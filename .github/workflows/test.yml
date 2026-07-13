@@ -5,16 +5,24 @@ on:
   pull_request:
 
 jobs:
-  powershell:
+  windows-powershell:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
       - name: Install Pester
-        shell: ${{ matrix.shell }}
+        shell: powershell
         run: Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
       - name: Run tests
-        shell: ${{ matrix.shell }}
+        shell: powershell
+        run: Invoke-Pester .\tests\CodexMonitor.Tests.ps1 -Output Detailed
+
+  powershell-core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module Pester -MinimumVersion 5.5.0 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: Run tests
+        shell: pwsh
         run: Invoke-Pester .\tests\CodexMonitor.Tests.ps1 -Output Detailed
