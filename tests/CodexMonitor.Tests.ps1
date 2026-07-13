@@ -41,6 +41,18 @@ Describe 'Codex session discovery' {
         $Scan.CompletedUtc | Should -BeOfType ([DateTime])
     }
 
+    It 'finds the nearest repository marker without relying on native Git errors' {
+        $NestedWorkspace = Join-Path $Workspace 'src\feature'
+        New-Item -ItemType Directory -Path (Join-Path $Workspace '.git'),$NestedWorkspace -Force | Out-Null
+        $NestedMeta = @{ type='session_meta'; payload=@{ id='session-1'; cwd=$NestedWorkspace } } | ConvertTo-Json -Compress
+        Set-Content -LiteralPath $SessionFile -Value @($NestedMeta,$Usage) -Encoding UTF8
+
+        $Result = @(Get-CodexSessionSnapshot -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow))
+
+        $Result.Count | Should -Be 1
+        $Result[0].Workspace | Should -Be ([IO.Path]::GetFullPath($Workspace).TrimEnd('\','/'))
+    }
+
     It 'counts malformed session metadata without exposing record content' {
         Set-Content -LiteralPath $SessionFile -Value '{malformed-json' -Encoding UTF8
         $Scan = Get-CodexSessionScan -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow)

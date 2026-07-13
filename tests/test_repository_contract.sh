@@ -26,7 +26,7 @@ require_text src/CodexMonitor.psm1 "'session_meta'"
 require_text src/CodexMonitor.psm1 "'token_count'"
 require_text src/CodexMonitor.psm1 'cached_input_tokens'
 require_text src/CodexMonitor.psm1 'input_tokens'
-require_text src/CodexMonitor.psm1 'rev-parse --show-toplevel'
+require_text src/CodexMonitor.psm1 "Join-Path \$Current.FullName '.git'"
 require_text src/CodexMonitor.psm1 'System.IO.FileSystemWatcher'
 require_text src/CodexMonitor.psm1 'diff --numstat'
 require_text src/CodexMonitor.psm1 'rev-list --count'

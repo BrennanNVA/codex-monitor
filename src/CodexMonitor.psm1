@@ -22,13 +22,17 @@ function ConvertTo-NormalizedPath {
 function Resolve-GitWorkspaceRoot {
     param([string]$Path)
     if ($script:GitRootCache.ContainsKey($Path)) { return $script:GitRootCache[$Path] }
-    if ($null -eq (Get-Command git -ErrorAction SilentlyContinue)) { return $Path }
-    $GitRoot = (& git -C $Path rev-parse --show-toplevel 2>$null | Select-Object -First 1)
-    if ([string]::IsNullOrWhiteSpace($GitRoot)) { return $Path }
-    $NormalizedRoot = ConvertTo-NormalizedPath $GitRoot
-    if ($null -eq $NormalizedRoot) { return $Path }
-    $script:GitRootCache[$Path] = $NormalizedRoot
-    return $NormalizedRoot
+    $Current = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    while ($null -ne $Current) {
+        if (Test-Path -LiteralPath (Join-Path $Current.FullName '.git')) {
+            $NormalizedRoot = ConvertTo-NormalizedPath $Current.FullName
+            $script:GitRootCache[$Path] = $NormalizedRoot
+            return $NormalizedRoot
+        }
+        $Current = $Current.Parent
+    }
+    $script:GitRootCache[$Path] = $Path
+    return $Path
 }
 
 function ConvertFrom-TokenCountLine {
