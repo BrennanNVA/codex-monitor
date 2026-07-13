@@ -163,3 +163,28 @@ Describe 'Metric formatting' {
         Format-CacheRate -Cached 300000 -InputTokens 1200000 | Should -Be '25.00%'
     }
 }
+
+Describe 'Monitor health' {
+    It 'updates refresh time and clears transient scan errors after recovery' {
+        $Health = New-MonitorHealth
+        $FailedScan = [PSCustomObject]@{ CompletedUtc=[DateTime]'2026-07-13T12:00:00Z'; ReadErrorCount=2 }
+        Update-MonitorHealthFromScan -Health $Health -Scan $FailedScan
+        $Health.LastRefreshUtc | Should -Be ([DateTime]'2026-07-13T12:00:00Z')
+        $Health.ReadErrorCount | Should -Be 2
+
+        $SuccessfulScan = [PSCustomObject]@{ CompletedUtc=[DateTime]'2026-07-13T12:00:05Z'; ReadErrorCount=0 }
+        Update-MonitorHealthFromScan -Health $Health -Scan $SuccessfulScan
+        $Health.LastRefreshUtc | Should -Be ([DateTime]'2026-07-13T12:00:05Z')
+        $Health.ReadErrorCount | Should -Be 0
+    }
+
+    It 'retains dropped-event warnings for the process lifetime' {
+        $Health = New-MonitorHealth
+        Add-MonitorWatcherError -Health $Health -OccurredUtc ([DateTime]'2026-07-13T12:01:00Z')
+        Add-MonitorWatcherError -Health $Health -OccurredUtc ([DateTime]'2026-07-13T12:02:00Z')
+        $Health.DroppedEventCount | Should -Be 2
+        $Health.LastWatcherErrorUtc | Should -Be ([DateTime]'2026-07-13T12:02:00Z')
+        Update-MonitorHealthFromScan -Health $Health -Scan ([PSCustomObject]@{ CompletedUtc=[DateTime]'2026-07-13T12:03:00Z'; ReadErrorCount=0 })
+        $Health.DroppedEventCount | Should -Be 2
+    }
+}

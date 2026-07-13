@@ -256,6 +256,37 @@ function Get-ShortHash {
     try { return ([BitConverter]::ToString($Sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))).Replace('-','').Substring(0,12)) } finally { $Sha.Dispose() }
 }
 
+function New-MonitorHealth {
+    [CmdletBinding()]
+    param()
+    return [PSCustomObject]@{
+        LastRefreshUtc = [DateTime]::MinValue
+        ReadErrorCount = 0
+        DroppedEventCount = 0
+        LastWatcherErrorUtc = [DateTime]::MinValue
+    }
+}
+
+function Update-MonitorHealthFromScan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Health,
+        [Parameter(Mandatory)]$Scan
+    )
+    $Health.LastRefreshUtc = [DateTime]$Scan.CompletedUtc
+    $Health.ReadErrorCount = [int]$Scan.ReadErrorCount
+}
+
+function Add-MonitorWatcherError {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Health,
+        [DateTime]$OccurredUtc = [DateTime]::UtcNow
+    )
+    $Health.DroppedEventCount++
+    $Health.LastWatcherErrorUtc = $OccurredUtc
+}
+
 function New-WorkspaceMonitor {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
@@ -266,7 +297,7 @@ function New-WorkspaceMonitor {
     $Watcher.Path = $Normalized; $Watcher.Filter = '*'; $Watcher.IncludeSubdirectories = $true
     $Watcher.NotifyFilter = [IO.NotifyFilters]::FileName -bor [IO.NotifyFilters]::DirectoryName -bor [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size
     $Watcher.InternalBufferSize = 32768
-    foreach ($Name in @('Created','Changed','Deleted','Renamed')) {
+    foreach ($Name in @('Created','Changed','Deleted','Renamed','Error')) {
         Register-ObjectEvent -InputObject $Watcher -EventName $Name -SourceIdentifier "$Prefix.$Name" | Out-Null
     }
     $Watcher.EnableRaisingEvents = $true
@@ -279,6 +310,7 @@ function New-WorkspaceMonitor {
         Path = $Normalized; SourcePrefix = $Prefix; Watcher = $Watcher; StartCommit = $StartCommit
         Counters = [ordered]@{ Created=0; Changed=0; Deleted=0; Renamed=0 }
         RecentEvents = @{}; EventHistory = (New-Object System.Collections.ArrayList)
+        Health = New-MonitorHealth
         LastGitRefreshUtc = [DateTime]::MinValue
         Git = [PSCustomObject]@{ Available=$false; CodeIn=[long]0; CodeOut=[long]0; Commits=[long]0 }
     }
@@ -286,11 +318,20 @@ function New-WorkspaceMonitor {
 
 function Receive-WorkspaceEvents {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Monitor)
+    param(
+        [Parameter(Mandatory)]$Monitor,
+        $Health
+    )
     $AcceptedCount = 0
     $Events = @(Get-Event -ErrorAction SilentlyContinue | Where-Object { $_.SourceIdentifier -like "$($Monitor.SourcePrefix).*" })
     foreach ($Event in $Events) {
         try {
+            if ($Event.SourceIdentifier -eq "$($Monitor.SourcePrefix).Error") {
+                Add-MonitorWatcherError -Health $Monitor.Health
+                if ($null -ne $Health) { Add-MonitorWatcherError -Health $Health }
+                $AcceptedCount++
+                continue
+            }
             $Args = $Event.SourceEventArgs; $FullPath = $Args.FullPath
             if ([string]::IsNullOrWhiteSpace($FullPath) -or $FullPath -match $script:IgnoredPathPattern) { continue }
             $Type = $Args.ChangeType.ToString(); $Key = "$Type|$FullPath"; $Now = [DateTime]::UtcNow.Ticks
@@ -357,4 +398,4 @@ function Format-CacheRate {
     return ((($Cached/[double]$InputTokens)*100).ToString('0.00',[Globalization.CultureInfo]::InvariantCulture)+'%')
 }
 
-Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,Update-SessionTokenState,Get-SinceLaunchTokenTotals,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
+Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,Update-SessionTokenState,Get-SinceLaunchTokenTotals,New-MonitorHealth,Update-MonitorHealthFromScan,Add-MonitorWatcherError,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate

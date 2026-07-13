@@ -14,6 +14,7 @@ $DiscoveryDirty = $true; $DiscoveryDirtySinceUtc = [DateTime]::MinValue
 $LiveDebounce = [TimeSpan]::FromMilliseconds(100)
 $RecoveryInterval = [TimeSpan]::FromSeconds(5)
 $LastRecoveryUtc = [DateTime]::MinValue; $RenderDirty = $true
+$StartedUtc = [DateTime]::UtcNow; $SessionTokenState = @{}; $MonitorHealth = New-MonitorHealth
 $Host.UI.RawUI.WindowTitle = 'Codex Monitor'
 Clear-Host
 
@@ -32,19 +33,26 @@ function Show-Dashboard {
     $Ordered=@($Workspaces | Sort-Object Path); $Visible=@($Ordered | Select-Object -First 9)
     $Title = if ($null -eq $SelectedPath) { 'All Workspaces' } else { $SelectedPath }
     Write-Ui 'CODEX MONITOR' Cyan; Write-Host; Write-Ui $Title White; Write-Host
-    Write-Ui "Active Workspaces: $($Ordered.Count)   Active Agents: $(($Ordered | Measure-Object AgentCount -Sum).Sum)" DarkGray; Write-Host
+    $AgentCount = [long](($Ordered | Measure-Object AgentCount -Sum).Sum)
+    $Uptime = [Math]::Max(0, [int]([DateTime]::UtcNow - $StartedUtc).TotalMinutes)
+    Write-Ui "Active Workspaces: $($Ordered.Count)   Active Agents: $AgentCount   Uptime: ${Uptime}m" DarkGray; Write-Host
 
     $Targets = if ($null -eq $SelectedPath) { $Ordered } else { @($Ordered | Where-Object Path -eq $SelectedPath) }
-    $Created=0;$Changed=0;$Deleted=0;$Renamed=0;$CodeIn=[long]0;$CodeOut=[long]0;$Commits=[long]0;$GitAvailable=$false;$Tokens=[long]0;$InputTokens=[long]0;$Cached=[long]0;$TokenAvailable=$false
+    $Created=0;$Changed=0;$Deleted=0;$Renamed=0;$CodeIn=[long]0;$CodeOut=[long]0;$Commits=[long]0;$GitAvailable=$false
     foreach ($Workspace in $Targets) {
         $Monitor=$Monitors[$Workspace.Path]; if ($null -eq $Monitor) { continue }
         $Created += $Monitor.Counters.Created; $Changed += $Monitor.Counters.Changed; $Deleted += $Monitor.Counters.Deleted; $Renamed += $Monitor.Counters.Renamed
         if ($Monitor.Git.Available) { $GitAvailable=$true;$CodeIn += $Monitor.Git.CodeIn;$CodeOut += $Monitor.Git.CodeOut;$Commits += $Monitor.Git.Commits }
-        if ($Workspace.HasTokenUsage) { $TokenAvailable=$true;$Tokens += $Workspace.TokensUsed;$InputTokens += $Workspace.InputTokens;$Cached += $Workspace.TokensCached }
     }
     Write-Ui "($Deleted) Deleted" Red -NoNewline; Write-Ui "   ($Changed) Changed" Yellow -NoNewline; Write-Ui "   ($Created) Created" Green -NoNewline; Write-Ui "   ($Renamed) Renamed" Magenta; Write-Host
     if ($GitAvailable) { Write-Ui "+ ($($CodeIn.ToString('N0')))" Green -NoNewline; Write-Ui "   - ($($CodeOut.ToString('N0')))" Red -NoNewline; Write-Ui "   ($Commits) Git Commits" Cyan } else { Write-Ui '+ (N/A)   - (N/A)   (N/A) Git Commits' DarkGray }; Write-Host
-    if ($TokenAvailable) { Write-Ui "($(Format-CompactNumber $Tokens)) Tokens Used   ($(Format-CompactNumber $Cached) / $(Format-CacheRate $Cached $InputTokens)) Tokens Cached" Cyan } else { Write-Ui '(N/A) Tokens Used   (N/A / N/A) Tokens Cached' DarkGray }; Write-Host
+    $TokenTotals = if ($null -eq $SelectedPath) { Get-SinceLaunchTokenTotals -State $SessionTokenState } else { Get-SinceLaunchTokenTotals -State $SessionTokenState -Workspace $SelectedPath }
+    if ($TokenTotals.HasTokenUsage) { Write-Ui "Tokens Since Launch: $(Format-CompactNumber $TokenTotals.TokensUsed)   Cached: $(Format-CompactNumber $TokenTotals.TokensCached) / $(Format-CacheRate $TokenTotals.TokensCached $TokenTotals.InputTokens)" Cyan } else { Write-Ui 'Tokens Since Launch: N/A   Cached: N/A / N/A' DarkGray }; Write-Host
+    $RefreshText = if ($MonitorHealth.LastRefreshUtc -eq [DateTime]::MinValue) { 'Never' } else { $MonitorHealth.LastRefreshUtc.ToLocalTime().ToString('HH:mm:ss') }
+    $Warnings = New-Object System.Collections.ArrayList
+    if ($MonitorHealth.ReadErrorCount -gt 0) { [void]$Warnings.Add("$($MonitorHealth.ReadErrorCount) session read failure(s)") }
+    if ($MonitorHealth.DroppedEventCount -gt 0) { [void]$Warnings.Add("filesystem events may have been dropped ($($MonitorHealth.DroppedEventCount))") }
+    if ($Warnings.Count -eq 0) { Write-Ui "Token Refresh: $RefreshText   Status: OK" Green } else { Write-Ui "Token Refresh: $RefreshText   Status: WARNING - $($Warnings -join '; ')" Yellow }; Write-Host
     Write-Ui ('-' * [Math]::Max(20,[Math]::Min(100,$Width-1))) DarkGray; Write-Host
 
     if ($null -eq $SelectedPath) {
@@ -66,25 +74,36 @@ try {
             $SessionWatcher = New-Object System.IO.FileSystemWatcher
             $SessionWatcher.Path = $SessionRoot; $SessionWatcher.Filter = '*.jsonl'; $SessionWatcher.IncludeSubdirectories = $true
             $SessionWatcher.NotifyFilter = [IO.NotifyFilters]::FileName -bor [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size
-            foreach ($EventName in @('Created','Changed','Renamed')) { Register-ObjectEvent -InputObject $SessionWatcher -EventName $EventName -SourceIdentifier "$SessionEventPrefix.$EventName" | Out-Null }
+            foreach ($EventName in @('Created','Changed','Renamed','Error')) { Register-ObjectEvent -InputObject $SessionWatcher -EventName $EventName -SourceIdentifier "$SessionEventPrefix.$EventName" | Out-Null }
             $SessionWatcher.EnableRaisingEvents = $true
             $DiscoveryDirty = $true; $DiscoveryDirtySinceUtc = $NowUtc
         }
 
         $SessionEvents = @(Get-Event -ErrorAction SilentlyContinue | Where-Object { $_.SourceIdentifier -like "$SessionEventPrefix.*" })
-        if ($SessionEvents.Count -gt 0 -and -not $DiscoveryDirty) { $DiscoveryDirty = $true; $DiscoveryDirtySinceUtc = $NowUtc }
-        foreach ($SessionEvent in $SessionEvents) { Remove-Event -EventIdentifier $SessionEvent.EventIdentifier -ErrorAction SilentlyContinue }
+        foreach ($SessionEvent in $SessionEvents) {
+            if ($SessionEvent.SourceIdentifier -eq "$SessionEventPrefix.Error") {
+                Add-MonitorWatcherError -Health $MonitorHealth -OccurredUtc $NowUtc
+                $RenderDirty = $true
+            }
+            elseif (-not $DiscoveryDirty) {
+                $DiscoveryDirty = $true; $DiscoveryDirtySinceUtc = $NowUtc
+            }
+            Remove-Event -EventIdentifier $SessionEvent.EventIdentifier -ErrorAction SilentlyContinue
+        }
 
         if (($DiscoveryDirty -and ($NowUtc - $DiscoveryDirtySinceUtc) -ge $LiveDebounce) -or
             (($NowUtc - $LastRecoveryUtc) -ge $RecoveryInterval)) {
-            $Sessions = Get-CodexSessionSnapshot -CodexHome $ResolvedHome -ActiveWithin ([TimeSpan]::FromSeconds($InactiveSeconds))
+            $Scan = Get-CodexSessionScan -CodexHome $ResolvedHome -ActiveWithin ([TimeSpan]::FromSeconds($InactiveSeconds))
+            $Sessions = @($Scan.Sessions)
+            Update-MonitorHealthFromScan -Health $MonitorHealth -Scan $Scan
+            Update-SessionTokenState -State $SessionTokenState -Sessions $Sessions
             $Workspaces = @(Get-ActiveWorkspaceSnapshot -Sessions $Sessions)
             $Active=@{}; foreach ($W in $Workspaces) { $Active[$W.Path]=$true; if (-not $Monitors.ContainsKey($W.Path)) { $Monitors[$W.Path]=New-WorkspaceMonitor -Path $W.Path } }
             foreach ($Path in @($Monitors.Keys)) { if (-not $Active.ContainsKey($Path)) { Remove-WorkspaceMonitor $Monitors[$Path]; $Monitors.Remove($Path); if ($SelectedPath -eq $Path) { $SelectedPath=$null } } }
             $DiscoveryDirty = $false; $LastRecoveryUtc = $NowUtc; $RenderDirty = $true
         }
         foreach ($Monitor in @($Monitors.Values)) {
-            $AcceptedEvents = Receive-WorkspaceEvents $Monitor
+            $AcceptedEvents = Receive-WorkspaceEvents -Monitor $Monitor -Health $MonitorHealth
             if ($AcceptedEvents -gt 0 -or ($NowUtc - $Monitor.LastGitRefreshUtc).TotalSeconds -ge 5) {
                 Update-WorkspaceGitMetrics $Monitor
                 $RenderDirty = $true

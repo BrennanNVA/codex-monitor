@@ -37,10 +37,14 @@ require_text src/codex-monitor.ps1 "KeyChar -match '^[1-9]$'"
 require_text src/codex-monitor.ps1 "KeyChar -match '^[aA]$'"
 require_text src/codex-monitor.ps1 "KeyChar -match '^[qQ]$'"
 require_text src/codex-monitor.ps1 '[1-9] View Workspace   [A] View All   [Q] Quit'
-require_text src/codex-monitor.ps1 'Format-CacheRate $Cached $InputTokens'
+require_text src/codex-monitor.ps1 'Format-CacheRate $TokenTotals.TokensCached $TokenTotals.InputTokens'
+require_text src/codex-monitor.ps1 'Tokens Since Launch'
+require_text src/codex-monitor.ps1 'Token Refresh:'
+require_text src/codex-monitor.ps1 'Status:'
 require_text src/codex-monitor.ps1 '[Console]::SetCursorPosition(0, 0)'
 require_text src/codex-monitor.ps1 '[Console]::CursorVisible = $false'
 require_text src/codex-monitor.ps1 '$SessionWatcher = New-Object System.IO.FileSystemWatcher'
+require_text src/codex-monitor.ps1 "'Created','Changed','Renamed','Error'"
 require_text src/codex-monitor.ps1 '$DiscoveryDirty = $true'
 require_text src/codex-monitor.ps1 '[TimeSpan]::FromMilliseconds(100)'
 require_text src/codex-monitor.ps1 '[TimeSpan]::FromSeconds(5)'
