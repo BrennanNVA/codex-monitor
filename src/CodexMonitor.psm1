@@ -402,4 +402,14 @@ function Format-CacheRate {
     return ((($Cached/[double]$InputTokens)*100).ToString('0.00',[Globalization.CultureInfo]::InvariantCulture)+'%')
 }
 
-Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,Update-SessionTokenState,Get-SinceLaunchTokenTotals,New-MonitorHealth,Update-MonitorHealthFromScan,Add-MonitorWatcherError,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
+function Format-ConsoleFrame {
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][string[]]$Lines = @())
+
+    $Escape = [char]27
+    if ($Lines.Count -eq 0) { return "${Escape}[0J" }
+    $Rows = @($Lines | ForEach-Object { "$_${Escape}[K" })
+    return ($Rows -join "`r`n") + "${Escape}[0J"
+}
+
+Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,Update-SessionTokenState,Get-SinceLaunchTokenTotals,New-MonitorHealth,Update-MonitorHealthFromScan,Add-MonitorWatcherError,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate,Format-ConsoleFrame

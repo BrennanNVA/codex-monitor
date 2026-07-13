@@ -61,9 +61,9 @@ require_text VERSION '0.2.0'
 require_text SECURITY.md 'session'
 require_text .github/workflows/test.yml 'windows-latest'
 
-clear_line="$(grep -nF '[Console]::Write("$([char]27)[0J")' "$root/src/codex-monitor.ps1" | head -n 1 | cut -d: -f1)"
-title_line="$(grep -nF "Write-Ui 'CODEX MONITOR'" "$root/src/codex-monitor.ps1" | head -n 1 | cut -d: -f1)"
-[[ -n "$clear_line" && -n "$title_line" && "$clear_line" -lt "$title_line" ]] || fail 'dashboard clears stale rows before rendering'
-pass 'dashboard clears stale rows before rendering'
+require_text src/codex-monitor.ps1 'Format-ConsoleFrame -Lines'
+require_text src/codex-monitor.ps1 '[Console]::Write($Frame)'
+if grep -Fq '[Console]::Write("$([char]27)[0J")' "$root/src/codex-monitor.ps1"; then fail 'dashboard avoids clearing the screen before rendering'; fi
+pass 'dashboard avoids clearing the screen before rendering'
 
 printf 'All repository contract tests passed.\n'

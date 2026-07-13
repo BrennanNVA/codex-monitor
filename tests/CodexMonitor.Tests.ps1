@@ -176,6 +176,20 @@ Describe 'Metric formatting' {
     }
 }
 
+Describe 'Console frame formatting' {
+    It 'draws content before clearing unused console space' {
+        $Command = Get-Command Format-ConsoleFrame -ErrorAction SilentlyContinue
+        $Command | Should -Not -BeNullOrEmpty
+        if ($null -eq $Command) { return }
+
+        $Escape = [char]27
+        $Frame = Format-ConsoleFrame -Lines @('first row','second row')
+
+        $Frame | Should -Be ("first row${Escape}[K`r`nsecond row${Escape}[K${Escape}[0J")
+        $Frame.StartsWith("${Escape}[0J") | Should -BeFalse
+    }
+}
+
 Describe 'Monitor health' {
     It 'updates refresh time and clears transient scan errors after recovery' {
         $Health = New-MonitorHealth

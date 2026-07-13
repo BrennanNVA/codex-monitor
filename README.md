@@ -32,6 +32,7 @@ A lightweight Windows terminal dashboard for observing active Codex CLI workspac
 - Shows the last successful token refresh and visible warnings for session-read failures or dropped filesystem events.
 - Reads large Codex JSONL logs from the end without loading thousands of earlier records.
 - Refreshes from filesystem and Codex session-log events with approximately 100 ms display latency.
+- Buffers each dashboard frame so live updates do not blank or flicker while new information is rendered.
 - Supports Windows PowerShell 5.1 and PowerShell 7.
 - Offers keyboard-only controls and an optional no-color display.
 

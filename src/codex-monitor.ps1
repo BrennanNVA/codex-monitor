@@ -18,25 +18,34 @@ $StartedUtc = [DateTime]::UtcNow; $SessionTokenState = @{}; $MonitorHealth = New
 $Host.UI.RawUI.WindowTitle = 'Codex Monitor'
 Clear-Host
 
-function Write-Ui { param([string]$Text,[ConsoleColor]$Color=[ConsoleColor]::Gray,[switch]$NoNewline) if ($NoColor) { Write-Host $Text -NoNewline:$NoNewline } else { Write-Host $Text -ForegroundColor $Color -NoNewline:$NoNewline } }
 function Fit-Text { param([string]$Text,[int]$Width) if ($Text.Length -le $Width) { return $Text }; if ($Width -le 3) { return $Text.Substring(0,$Width) }; return $Text.Substring(0,$Width-3)+'...' }
+function Format-UiText {
+    param([string]$Text,[ConsoleColor]$Color=[ConsoleColor]::Gray)
+    if ($NoColor) { return $Text }
+    $Code = switch ($Color.ToString()) {
+        'Black' {'30'} 'DarkBlue' {'34'} 'DarkGreen' {'32'} 'DarkCyan' {'36'}
+        'DarkRed' {'31'} 'DarkMagenta' {'35'} 'DarkYellow' {'33'} 'Gray' {'37'}
+        'DarkGray' {'90'} 'Blue' {'94'} 'Green' {'92'} 'Cyan' {'96'}
+        'Red' {'91'} 'Magenta' {'95'} 'Yellow' {'93'} 'White' {'97'}
+        default {'37'}
+    }
+    $Escape = [char]27
+    return "${Escape}[${Code}m${Text}${Escape}[0m"
+}
 
 function Show-Dashboard {
     param([object[]]$Workspaces)
-    try {
-        [Console]::SetCursorPosition(0, 0)
-    }
-    catch {
-        # Non-interactive hosts may not expose a movable console cursor.
-    }
-    [Console]::Write("$([char]27)[0J")
     $Width=100; $Height=30; try { $Width=$Host.UI.RawUI.WindowSize.Width; $Height=$Host.UI.RawUI.WindowSize.Height } catch { }
+    $LineWidth = [Math]::Max(1,$Width-1)
+    $Lines = New-Object 'System.Collections.Generic.List[string]'
     $Ordered=@($Workspaces | Sort-Object Path); $Visible=@($Ordered | Select-Object -First 9)
     $Title = if ($null -eq $SelectedPath) { 'All Workspaces' } else { $SelectedPath }
-    Write-Ui 'CODEX MONITOR' Cyan; Write-Host; Write-Ui $Title White; Write-Host
+    [void]$Lines.Add((Format-UiText 'CODEX MONITOR' Cyan))
+    [void]$Lines.Add((Format-UiText (Fit-Text $Title $LineWidth) White))
     $AgentCount = [long](($Ordered | Measure-Object AgentCount -Sum).Sum)
     $Uptime = [Math]::Max(0, [int]([DateTime]::UtcNow - $StartedUtc).TotalMinutes)
-    Write-Ui "Active Workspaces: $($Ordered.Count)   Active Agents: $AgentCount   Uptime: ${Uptime}m" DarkGray; Write-Host
+    $ActivityText = "Active Workspaces: $($Ordered.Count)   Active Agents: $AgentCount   Uptime: ${Uptime}m"
+    [void]$Lines.Add((Format-UiText (Fit-Text $ActivityText $LineWidth) DarkGray))
 
     $Targets = if ($null -eq $SelectedPath) { $Ordered } else { @($Ordered | Where-Object Path -eq $SelectedPath) }
     $Created=0;$Changed=0;$Deleted=0;$Renamed=0;$CodeIn=[long]0;$CodeOut=[long]0;$Commits=[long]0;$GitAvailable=$false
@@ -45,24 +54,35 @@ function Show-Dashboard {
         $Created += $Monitor.Counters.Created; $Changed += $Monitor.Counters.Changed; $Deleted += $Monitor.Counters.Deleted; $Renamed += $Monitor.Counters.Renamed
         if ($Monitor.Git.Available) { $GitAvailable=$true;$CodeIn += $Monitor.Git.CodeIn;$CodeOut += $Monitor.Git.CodeOut;$Commits += $Monitor.Git.Commits }
     }
-    Write-Ui "($Deleted) Deleted" Red -NoNewline; Write-Ui "   ($Changed) Changed" Yellow -NoNewline; Write-Ui "   ($Created) Created" Green -NoNewline; Write-Ui "   ($Renamed) Renamed" Magenta; Write-Host
-    if ($GitAvailable) { Write-Ui "+ ($($CodeIn.ToString('N0')))" Green -NoNewline; Write-Ui "   - ($($CodeOut.ToString('N0')))" Red -NoNewline; Write-Ui "   ($Commits) Git Commits" Cyan } else { Write-Ui '+ (N/A)   - (N/A)   (N/A) Git Commits' DarkGray }; Write-Host
+    $ChangeLine = (Format-UiText "($Deleted) Deleted" Red) + (Format-UiText "   ($Changed) Changed" Yellow) + (Format-UiText "   ($Created) Created" Green) + (Format-UiText "   ($Renamed) Renamed" Magenta)
+    [void]$Lines.Add($ChangeLine)
+    if ($GitAvailable) {
+        $GitLine = (Format-UiText "+ ($($CodeIn.ToString('N0')))" Green) + (Format-UiText "   - ($($CodeOut.ToString('N0')))" Red) + (Format-UiText "   ($Commits) Git Commits" Cyan)
+    } else { $GitLine = Format-UiText '+ (N/A)   - (N/A)   (N/A) Git Commits' DarkGray }
+    [void]$Lines.Add($GitLine)
     $TokenTotals = if ($null -eq $SelectedPath) { Get-SinceLaunchTokenTotals -State $SessionTokenState } else { Get-SinceLaunchTokenTotals -State $SessionTokenState -Workspace $SelectedPath }
-    if ($TokenTotals.HasTokenUsage) { Write-Ui "Tokens Since Launch: $(Format-CompactNumber $TokenTotals.TokensUsed)   Cached: $(Format-CompactNumber $TokenTotals.TokensCached) / $(Format-CacheRate $TokenTotals.TokensCached $TokenTotals.InputTokens)" Cyan } else { Write-Ui 'Tokens Since Launch: N/A   Cached: N/A / N/A' DarkGray }; Write-Host
+    if ($TokenTotals.HasTokenUsage) { $TokenText = "Tokens Since Launch: $(Format-CompactNumber $TokenTotals.TokensUsed)   Cached: $(Format-CompactNumber $TokenTotals.TokensCached) / $(Format-CacheRate $TokenTotals.TokensCached $TokenTotals.InputTokens)"; $TokenColor = [ConsoleColor]::Cyan } else { $TokenText = 'Tokens Since Launch: N/A   Cached: N/A / N/A'; $TokenColor = [ConsoleColor]::DarkGray }
+    [void]$Lines.Add((Format-UiText (Fit-Text $TokenText $LineWidth) $TokenColor))
     $RefreshText = if ($MonitorHealth.LastRefreshUtc -eq [DateTime]::MinValue) { 'Never' } else { $MonitorHealth.LastRefreshUtc.ToLocalTime().ToString('HH:mm:ss') }
     $Warnings = New-Object System.Collections.ArrayList
     if ($MonitorHealth.ReadErrorCount -gt 0) { [void]$Warnings.Add("$($MonitorHealth.ReadErrorCount) session read failure(s)") }
     if ($MonitorHealth.DroppedEventCount -gt 0) { [void]$Warnings.Add("filesystem events may have been dropped ($($MonitorHealth.DroppedEventCount))") }
-    if ($Warnings.Count -eq 0) { Write-Ui "Token Refresh: $RefreshText   Status: OK" Green } else { Write-Ui "Token Refresh: $RefreshText   Status: WARNING - $($Warnings -join '; ')" Yellow }; Write-Host
-    Write-Ui ('-' * [Math]::Max(20,[Math]::Min(100,$Width-1))) DarkGray; Write-Host
+    if ($Warnings.Count -eq 0) { $StatusText = "Token Refresh: $RefreshText   Status: OK"; $StatusColor = [ConsoleColor]::Green } else { $StatusText = "Token Refresh: $RefreshText   Status: WARNING - $($Warnings -join '; ')"; $StatusColor = [ConsoleColor]::Yellow }
+    [void]$Lines.Add((Format-UiText (Fit-Text $StatusText $LineWidth) $StatusColor))
+    [void]$Lines.Add((Format-UiText ('-' * [Math]::Max(20,[Math]::Min(100,$Width-1))) DarkGray))
 
     if ($null -eq $SelectedPath) {
-        if ($Visible.Count -eq 0) { Write-Ui "Waiting for active Codex CLI sessions in $ResolvedHome ..." DarkGray; Write-Host }
-        for ($i=0;$i -lt $Visible.Count;$i++) { $W=$Visible[$i]; $Age=[Math]::Max(0,[int]([DateTime]::UtcNow-$W.LastActivityUtc).TotalSeconds); Write-Ui "[$($i+1)] ACTIVE  " Green -NoNewline; Write-Host (Fit-Text "$($W.Path)   $($W.AgentCount) agent(s)   ${Age}s ago" ($Width-13)) }
+        if ($Visible.Count -eq 0) { [void]$Lines.Add((Format-UiText (Fit-Text "Waiting for active Codex CLI sessions in $ResolvedHome ..." $LineWidth) DarkGray)) }
+        for ($i=0;$i -lt $Visible.Count;$i++) { $W=$Visible[$i]; $Age=[Math]::Max(0,[int]([DateTime]::UtcNow-$W.LastActivityUtc).TotalSeconds); $WorkspaceText=Fit-Text "$($W.Path)   $($W.AgentCount) agent(s)   ${Age}s ago" ([Math]::Max(1,$Width-13)); [void]$Lines.Add((Format-UiText "[$($i+1)] ACTIVE  " Green) + $WorkspaceText) }
     } else {
-        $Monitor=$Monitors[$SelectedPath]; if ($null -ne $Monitor) { $Rows=[Math]::Max(1,$Height-12); $Start=[Math]::Max(0,$Monitor.EventHistory.Count-$Rows); for ($i=$Start;$i -lt $Monitor.EventHistory.Count;$i++) { Write-Host (Fit-Text $Monitor.EventHistory[$i].Text ($Width-1)) } }
+        $Monitor=$Monitors[$SelectedPath]; if ($null -ne $Monitor) { $Rows=[Math]::Max(1,$Height-12); $Start=[Math]::Max(0,$Monitor.EventHistory.Count-$Rows); for ($i=$Start;$i -lt $Monitor.EventHistory.Count;$i++) { [void]$Lines.Add((Fit-Text $Monitor.EventHistory[$i].Text $LineWidth)) } }
     }
-    Write-Host; Write-Ui '[1-9] View Workspace   [A] View All   [Q] Quit' White; Write-Host
+    [void]$Lines.Add('')
+    [void]$Lines.Add((Format-UiText '[1-9] View Workspace   [A] View All   [Q] Quit' White))
+
+    $Frame = Format-ConsoleFrame -Lines @($Lines)
+    try { [Console]::SetCursorPosition(0, 0) } catch { }
+    [Console]::Write($Frame)
 }
 
 try {
