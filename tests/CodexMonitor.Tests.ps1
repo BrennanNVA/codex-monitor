@@ -33,9 +33,56 @@ Describe 'Codex session discovery' {
         $Result[0].InputTokens | Should -Be 1200000
     }
 
+    It 'reports successful scan diagnostics' {
+        $Scan = Get-CodexSessionScan -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow)
+        @($Scan.Sessions).Count | Should -Be 1
+        $Scan.CandidateCount | Should -Be 1
+        $Scan.ReadErrorCount | Should -Be 0
+        $Scan.CompletedUtc | Should -BeOfType ([DateTime])
+    }
+
+    It 'counts malformed session metadata without exposing record content' {
+        Set-Content -LiteralPath $SessionFile -Value '{malformed-json' -Encoding UTF8
+        $Scan = Get-CodexSessionScan -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow)
+        @($Scan.Sessions).Count | Should -Be 0
+        $Scan.CandidateCount | Should -Be 1
+        $Scan.ReadErrorCount | Should -Be 1
+        ($Scan | ConvertTo-Json -Compress) | Should -Not -Match 'malformed-json'
+    }
+
     It 'expires a session after the two-minute grace period' {
         (Get-Item $SessionFile).LastWriteTimeUtc = [DateTime]::UtcNow.AddMinutes(-3)
-        @(Get-CodexSessionSnapshot -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow -ActiveWithin ([TimeSpan]::FromMinutes(2))).Count | Should -Be 0
+        @(Get-CodexSessionSnapshot -CodexHome $CodexHome -NowUtc ([DateTime]::UtcNow) -ActiveWithin ([TimeSpan]::FromMinutes(2))).Count | Should -Be 0
+    }
+}
+
+Describe 'Efficient token reading' {
+    It 'finds the latest complete usage record near the end of a large JSONL file' {
+        $LargeSessionFile = Join-Path $script:TempRoot ("large-session-{0}.jsonl" -f [Guid]::NewGuid())
+        $Utf8WithoutBom = New-Object Text.UTF8Encoding($false)
+        $Writer = New-Object IO.StreamWriter($LargeSessionFile, $false, $Utf8WithoutBom)
+        try {
+            $LargePayload = 'x' * 8192
+            for ($Index = 0; $Index -lt 2560; $Index++) {
+                $Writer.WriteLine('{{"type":"response_item","payload":"{0}"}}' -f $LargePayload)
+            }
+            $Writer.WriteLine('{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5000,"cached_input_tokens":2000,"output_tokens":2000,"reasoning_output_tokens":0,"total_tokens":7000}}}}')
+            $Writer.Write('{"type":"event_msg","payload":')
+        }
+        finally {
+            $Writer.Dispose()
+        }
+
+        try {
+            $Stopwatch = [Diagnostics.Stopwatch]::StartNew()
+            $Usage = Get-LatestTokenUsage -Path $LargeSessionFile
+            $Stopwatch.Stop()
+            $Usage.total_tokens | Should -Be 7000
+            $Stopwatch.Elapsed.TotalSeconds | Should -BeLessThan 2
+        }
+        finally {
+            Remove-Item -LiteralPath $LargeSessionFile -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

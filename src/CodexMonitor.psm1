@@ -31,7 +31,59 @@ function Resolve-GitWorkspaceRoot {
     return $NormalizedRoot
 }
 
-function Get-CodexSessionSnapshot {
+function ConvertFrom-TokenCountLine {
+    param([string]$Line)
+
+    if ([string]::IsNullOrWhiteSpace($Line) -or $Line.IndexOf('token_count', [StringComparison]::Ordinal) -lt 0) { return }
+    try { $Record = $Line | ConvertFrom-Json -ErrorAction Stop } catch { return }
+    if ($Record.type -eq 'event_msg' -and $Record.payload.type -eq 'token_count') {
+        return $Record.payload.info.total_token_usage
+    }
+}
+
+function Get-LatestTokenUsage {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $FileShare = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+    $Stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, $FileShare)
+    $LineBytes = New-Object 'System.Collections.Generic.List[byte]'
+    $Utf8 = New-Object Text.UTF8Encoding($false)
+    try {
+        $Position = $Stream.Length
+        $BufferSize = 65536
+        while ($Position -gt 0) {
+            $ReadCount = [Math]::Min($BufferSize, $Position)
+            $Position -= $ReadCount
+            $Stream.Position = $Position
+            $Buffer = New-Object byte[] $ReadCount
+            $BytesRead = $Stream.Read($Buffer, 0, $ReadCount)
+            for ($Index = $BytesRead - 1; $Index -ge 0; $Index--) {
+                if ($Buffer[$Index] -eq 10) {
+                    if ($LineBytes.Count -eq 0) { continue }
+                    $LineBuffer = $LineBytes.ToArray()
+                    [Array]::Reverse($LineBuffer)
+                    $Line = $Utf8.GetString($LineBuffer).TrimEnd([char]13)
+                    $LineBytes.Clear()
+                    $Usage = ConvertFrom-TokenCountLine -Line $Line
+                    if ($null -ne $Usage -and $null -ne $Usage.total_tokens) { return $Usage }
+                    continue
+                }
+                [void]$LineBytes.Add($Buffer[$Index])
+            }
+        }
+        if ($LineBytes.Count -gt 0) {
+            $LineBuffer = $LineBytes.ToArray()
+            [Array]::Reverse($LineBuffer)
+            $Line = $Utf8.GetString($LineBuffer).TrimEnd([char]13)
+            $Usage = ConvertFrom-TokenCountLine -Line $Line
+            if ($null -ne $Usage -and $null -ne $Usage.total_tokens) { return $Usage }
+        }
+    }
+    finally { $Stream.Dispose() }
+}
+
+function Get-CodexSessionScan {
     [CmdletBinding()]
     param(
         [string]$CodexHome = (Resolve-CodexHome),
@@ -40,11 +92,14 @@ function Get-CodexSessionSnapshot {
     )
 
     $SessionRoot = Join-Path $CodexHome 'sessions'
-    if (-not (Test-Path -LiteralPath $SessionRoot -PathType Container)) { return @() }
+    if (-not (Test-Path -LiteralPath $SessionRoot -PathType Container)) {
+        return [PSCustomObject]@{ Sessions=@(); CompletedUtc=[DateTime]::UtcNow; CandidateCount=0; ReadErrorCount=0 }
+    }
     $Cutoff = $NowUtc.Subtract($ActiveWithin)
     $Results = New-Object System.Collections.ArrayList
-    $Files = Get-ChildItem -LiteralPath $SessionRoot -Filter '*.jsonl' -File -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.LastWriteTimeUtc -ge $Cutoff }
+    $ReadErrorCount = 0
+    $Files = @(Get-ChildItem -LiteralPath $SessionRoot -Filter '*.jsonl' -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -ge $Cutoff })
 
     foreach ($File in $Files) {
         $Metadata = $null
@@ -53,29 +108,24 @@ function Get-CodexSessionSnapshot {
                 try { $Record = $Line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
                 if ($Record.type -eq 'session_meta') { $Metadata = $Record.payload; break }
             }
-        } catch { continue }
-        if ($null -eq $Metadata) { continue }
+        }
+        catch { $ReadErrorCount++; continue }
+        if ($null -eq $Metadata) { $ReadErrorCount++; continue }
         $Workspace = ConvertTo-NormalizedPath $Metadata.cwd
         if ($null -eq $Workspace -or -not (Test-Path -LiteralPath $Workspace -PathType Container)) { continue }
         $Workspace = Resolve-GitWorkspaceRoot $Workspace
 
         $TotalTokens = [long]0; $InputTokens = [long]0; $CachedTokens = [long]0; $HasUsage = $false
         try {
-            $Tail = @(Get-Content -LiteralPath $File.FullName -Tail 2000 -ErrorAction Stop)
-            for ($Index = $Tail.Count - 1; $Index -ge 0; $Index--) {
-                try { $Record = $Tail[$Index] | ConvertFrom-Json -ErrorAction Stop } catch { continue }
-                if ($Record.type -eq 'event_msg' -and $Record.payload.type -eq 'token_count') {
-                    $Usage = $Record.payload.info.total_token_usage
-                    if ($null -ne $Usage -and $null -ne $Usage.total_tokens) {
-                        $TotalTokens = [long]$Usage.total_tokens
-                        if ($null -ne $Usage.input_tokens) { $InputTokens = [long]$Usage.input_tokens }
-                        if ($null -ne $Usage.cached_input_tokens) { $CachedTokens = [long]$Usage.cached_input_tokens }
-                        $HasUsage = $true
-                        break
-                    }
-                }
+            $Usage = Get-LatestTokenUsage -Path $File.FullName
+            if ($null -ne $Usage -and $null -ne $Usage.total_tokens) {
+                $TotalTokens = [long]$Usage.total_tokens
+                if ($null -ne $Usage.input_tokens) { $InputTokens = [long]$Usage.input_tokens }
+                if ($null -ne $Usage.cached_input_tokens) { $CachedTokens = [long]$Usage.cached_input_tokens }
+                $HasUsage = $true
             }
-        } catch { }
+        }
+        catch { $ReadErrorCount++ }
 
         $SessionId = if ($null -ne $Metadata.id) { [string]$Metadata.id } else { $File.BaseName }
         [void]$Results.Add([PSCustomObject]@{
@@ -84,7 +134,22 @@ function Get-CodexSessionSnapshot {
             SessionFile = $File.FullName
         })
     }
-    return @($Results)
+    return [PSCustomObject]@{
+        Sessions = @($Results)
+        CompletedUtc = [DateTime]::UtcNow
+        CandidateCount = $Files.Count
+        ReadErrorCount = $ReadErrorCount
+    }
+}
+
+function Get-CodexSessionSnapshot {
+    [CmdletBinding()]
+    param(
+        [string]$CodexHome = (Resolve-CodexHome),
+        [DateTime]$NowUtc = [DateTime]::UtcNow,
+        [TimeSpan]$ActiveWithin = [TimeSpan]::FromMinutes(2)
+    )
+    return @((Get-CodexSessionScan -CodexHome $CodexHome -NowUtc $NowUtc -ActiveWithin $ActiveWithin).Sessions)
 }
 
 function Get-ActiveWorkspaceSnapshot {
@@ -213,4 +278,4 @@ function Format-CacheRate {
     return ((($Cached/[double]$InputTokens)*100).ToString('0.00',[Globalization.CultureInfo]::InvariantCulture)+'%')
 }
 
-Export-ModuleMember -Function Resolve-CodexHome,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
+Export-ModuleMember -Function Resolve-CodexHome,Get-LatestTokenUsage,Get-CodexSessionScan,Get-CodexSessionSnapshot,Get-ActiveWorkspaceSnapshot,New-WorkspaceMonitor,Receive-WorkspaceEvents,Update-WorkspaceGitMetrics,Remove-WorkspaceMonitor,Format-CompactNumber,Format-CacheRate
