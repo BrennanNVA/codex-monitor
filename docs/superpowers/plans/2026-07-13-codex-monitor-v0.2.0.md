@@ -252,10 +252,10 @@ git commit -m "docs: prepare Codex Monitor v0.2.0"
 
 **Files:**
 - Create during packaging: `dist/codex-monitor-v0.2.0.zip`
-- Synchronize: `C:\Users\bgonn\Desktop\codex-watcher\README.md`
-- Synchronize: `C:\Users\bgonn\Desktop\codex-watcher\VERSION`
+- Synchronize: `%USERPROFILE%\Desktop\codex-watcher\README.md`
+- Synchronize: `%USERPROFILE%\Desktop\codex-watcher\VERSION`
 - Synchronize: release launcher, sources, icon assets, changelog, license, and security guidance.
-- Modify: `C:\Users\bgonn\Desktop\codex-watcher\Start-Codex-Watcher.cmd`
+- Modify: `%USERPROFILE%\Desktop\codex-watcher\Start-Codex-Watcher.cmd`
 
 **Interfaces:**
 - Consumes: verified repository files from Tasks 1–4.

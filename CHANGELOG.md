@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 - 2026-07-13
+
+- Read the newest token record backward from large JSONL session logs, preventing refresh stalls as sessions grow.
+- Report token and cache deltas since monitor launch and preserve totals when agents become inactive or counters reset.
+- Display active workspace/agent counts, uptime, last token refresh, and an explicit health status.
+- Surface sanitized session-read and dropped-filesystem-event warnings instead of silently showing stale or unavailable data.
+- Register and account for `FileSystemWatcher` error events while retaining the five-second session recovery scan.
+- Clear the dashboard before each in-place redraw so shorter views do not retain stale trailing text.
+- Add deterministic SVG, PNG, and multi-size ICO branding.
+- Replace legacy single-workspace screenshots with privacy-safe v0.2.0 aggregate and workspace captures.
+- Add large-log, scan-diagnostic, token-lifecycle, health-state, asset, and redraw-order regression coverage.
+
 ## 0.1.1 - 2026-07-12
 
 - Resolve active session directories to their real Git worktree roots so code metrics update for parallel worktrees.

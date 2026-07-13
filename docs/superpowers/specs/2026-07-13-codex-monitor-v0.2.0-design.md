@@ -78,7 +78,7 @@ Screenshots will be captured from the actual v0.2.0 program using temporary synt
 
 The repository will add a plain-text `VERSION` file containing `0.2.0`. README, changelog, design documentation, tests, and repository-contract checks will reference the new behavior and version. The release artifact will be named `codex-monitor-v0.2.0.zip` and contain the launcher, sources, version, license, security guidance, README, changelog, and required icon assets.
 
-The verified release contents will be synchronized into `C:\Users\bgonn\Desktop\codex-watcher`. The existing `Start-Codex-Watcher.cmd` and shortcut remain usable as compatibility entry points that launch v0.2.0. The legacy watcher source will be retained unless it conflicts with launch behavior; release documentation will clearly identify the preferred entry point.
+The verified release contents will be synchronized into `%USERPROFILE%\Desktop\codex-watcher`. The existing `Start-Codex-Watcher.cmd` and shortcut remain usable as compatibility entry points that launch v0.2.0. The legacy watcher source will be retained unless it conflicts with launch behavior; release documentation will clearly identify the preferred entry point.
 
 After fresh verification, the implementation will be committed to `main`, tagged `v0.2.0`, pushed to `BrennanNVA/codex-monitor`, and published as a GitHub release with the ZIP attached.
 

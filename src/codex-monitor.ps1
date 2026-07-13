@@ -29,6 +29,7 @@ function Show-Dashboard {
     catch {
         # Non-interactive hosts may not expose a movable console cursor.
     }
+    [Console]::Write("$([char]27)[0J")
     $Width=100; $Height=30; try { $Width=$Host.UI.RawUI.WindowSize.Width; $Height=$Host.UI.RawUI.WindowSize.Height } catch { }
     $Ordered=@($Workspaces | Sort-Object Path); $Visible=@($Ordered | Select-Object -First 9)
     $Title = if ($null -eq $SelectedPath) { 'All Workspaces' } else { $SelectedPath }
@@ -62,7 +63,6 @@ function Show-Dashboard {
         $Monitor=$Monitors[$SelectedPath]; if ($null -ne $Monitor) { $Rows=[Math]::Max(1,$Height-12); $Start=[Math]::Max(0,$Monitor.EventHistory.Count-$Rows); for ($i=$Start;$i -lt $Monitor.EventHistory.Count;$i++) { Write-Host (Fit-Text $Monitor.EventHistory[$i].Text ($Width-1)) } }
     }
     Write-Host; Write-Ui '[1-9] View Workspace   [A] View All   [Q] Quit' White; Write-Host
-    [Console]::Write("$([char]27)[0J")
 }
 
 try {

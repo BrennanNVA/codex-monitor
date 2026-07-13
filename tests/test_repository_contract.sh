@@ -11,7 +11,7 @@ pass() { printf 'PASS: %s\n' "$1"; }
 require_file() { [[ -f "$root/$1" ]] || fail "$1 exists"; pass "$1 exists"; }
 require_text() { grep -Fq -- "$2" "$root/$1" || fail "$1 contains $2"; pass "$1 contains $2"; }
 
-for file in src/CodexMonitor.psm1 src/codex-monitor.ps1 Start-Codex-Monitor.cmd README.md LICENSE SECURITY.md CONTRIBUTING.md CHANGELOG.md tests/CodexMonitor.Tests.ps1 .github/workflows/test.yml; do
+for file in src/CodexMonitor.psm1 src/codex-monitor.ps1 Start-Codex-Monitor.cmd README.md LICENSE SECURITY.md CONTRIBUTING.md CHANGELOG.md VERSION assets/codex-monitor.svg assets/codex-monitor.png assets/codex-monitor.ico assets/codex-monitor-overview.png assets/codex-monitor-workspace.png tests/CodexMonitor.Tests.ps1 .github/workflows/test.yml; do
   require_file "$file"
 done
 
@@ -56,7 +56,14 @@ require_text Start-Codex-Monitor.cmd '-ExecutionPolicy Bypass'
 require_text Start-Codex-Monitor.cmd 'mode con: cols=110 lines=24'
 require_text README.md 'Privacy'
 require_text README.md 'two minutes'
+require_text README.md '0.2.0'
+require_text VERSION '0.2.0'
 require_text SECURITY.md 'session'
 require_text .github/workflows/test.yml 'windows-latest'
+
+clear_line="$(grep -nF '[Console]::Write("$([char]27)[0J")' "$root/src/codex-monitor.ps1" | head -n 1 | cut -d: -f1)"
+title_line="$(grep -nF "Write-Ui 'CODEX MONITOR'" "$root/src/codex-monitor.ps1" | head -n 1 | cut -d: -f1)"
+[[ -n "$clear_line" && -n "$title_line" && "$clear_line" -lt "$title_line" ]] || fail 'dashboard clears stale rows before rendering'
+pass 'dashboard clears stale rows before rendering'
 
 printf 'All repository contract tests passed.\n'

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Codex Monitor icon</title>
+  <desc id="description">A cyan terminal prompt with a green activity light on a dark rounded monitor tile.</desc>
+  <rect x="24" y="24" width="464" height="464" rx="104" fill="#0b1220" stroke="#334155" stroke-width="16"/>
+  <rect x="70" y="96" width="372" height="320" rx="48" fill="#020617" stroke="#164e63" stroke-width="12"/>
+  <path d="M150 190 L220 256 L150 322" fill="none" stroke="#22d3ee" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M264 322 H354" fill="none" stroke="#22d3ee" stroke-width="38" stroke-linecap="round"/>
+  <circle cx="392" cy="116" r="38" fill="#0b1220"/>
+  <circle cx="392" cy="116" r="26" fill="#22c55e"/>
+</svg>
