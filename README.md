@@ -6,7 +6,7 @@
 
 A lightweight Windows terminal dashboard for observing active Codex CLI workspaces, parallel agents, filesystem mutations, Git changes, commits, and token usage.
 
-![Version 0.2.0](https://img.shields.io/badge/version-0.2.0-22d3ee)
+![Version 0.2.1](https://img.shields.io/badge/version-0.2.1-22d3ee)
 ![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
@@ -14,11 +14,11 @@ A lightweight Windows terminal dashboard for observing active Codex CLI workspac
 
 ### All workspaces
 
-![Codex Monitor v0.2.0 aggregate dashboard with active workspaces, since-launch tokens, and healthy refresh status](assets/codex-monitor-overview.png)
+![Codex Monitor v0.2.1 aggregate dashboard with active workspaces, since-launch tokens, and healthy refresh status](assets/codex-monitor-overview.png)
 
 ### Workspace activity
 
-![Codex Monitor v0.2.0 workspace view with filesystem, Git, token, and status metrics](assets/codex-monitor-workspace.png)
+![Codex Monitor v0.2.1 workspace view with filesystem, Git, token, and status metrics](assets/codex-monitor-workspace.png)
 
 ## Features
 

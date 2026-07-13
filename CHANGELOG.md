@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-07-13
+
+- Render each dashboard refresh as one buffered frame so incoming activity no longer blanks or flickers.
+- Clear stale row tails only after the replacement frame is ready, preserving compact in-place updates.
+- Add regression coverage that prevents pre-render full-screen clearing from returning.
+
 ## 0.2.0 - 2026-07-13
 
 - Read the newest token record backward from large JSONL session logs, preventing refresh stalls as sessions grow.
@@ -7,10 +13,10 @@
 - Display active workspace/agent counts, uptime, last token refresh, and an explicit health status.
 - Surface sanitized session-read and dropped-filesystem-event warnings instead of silently showing stale or unavailable data.
 - Register and account for `FileSystemWatcher` error events while retaining the five-second session recovery scan.
-- Render each dashboard refresh as one buffered frame, clearing stale row tails afterward without blanking or flickering.
+- Clear the dashboard before each in-place redraw so shorter views do not retain stale trailing text.
 - Add deterministic SVG, PNG, and multi-size ICO branding.
 - Replace legacy single-workspace screenshots with privacy-safe v0.2.0 aggregate and workspace captures.
-- Add large-log, scan-diagnostic, token-lifecycle, health-state, asset, and flicker-free redraw regression coverage.
+- Add large-log, scan-diagnostic, token-lifecycle, health-state, asset, and redraw-order regression coverage.
 
 ## 0.1.1 - 2026-07-12
 
